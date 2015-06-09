@@ -4,11 +4,13 @@ from .base import Layer
 from ..utils import as_tuple
 
 from theano.tensor.signal import downsample
-
+from theano import tensor
+from theano.tensor.signal.downsample import DownsampleFactorMax
 
 __all__ = [
     "MaxPool1DLayer",
     "MaxPool2DLayer",
+    "MaxPool3DLayer",
     "FeaturePoolLayer",
     "FeatureWTALayer",
     "GlobalPoolLayer",
@@ -140,6 +142,50 @@ class MaxPool1DLayer(Layer):
                                         )
         return pooled[:, :, :, 0]
 
+class MaxPool3DLayer(Layer):
+    """ 
+    3D max pooling layer. 
+
+    Implements 3D max pooling as a series of 2D Max Pooling operations by
+    first max pooling over the (X, Y) dimensions (or image by image), and then
+    reshaping the matrix, and performing Max Pooling over the Z dimension.
+
+
+    Original concept is from: https://github.com/lpigou/Theano-3D-ConvNet
+    """
+    def __init__(self, incoming, pool_size, stride=None,
+                 ignore_border=False, pad=(0, 0, 0), **kwargs):
+        super(MaxPool3DLayer, self).__init__(incoming, **kwargs)
+
+        self.pool_size = as_tuple(pool_size, 3)
+
+        if stride is None:
+            self.stride = self.pool_size
+        else:
+            self.stride = as_tuple(stride, 3)
+        
+        self.pad = as_tuple(pad, 3)
+        self.ignore_border = ignore_border
+
+    def get_output_for(self, input, **kwargs):
+        vid_dim = input.ndim
+        #Downsample along the (X, Y) dimensions
+        xypool = downsample.max_pool_2d(input, (self.pool_size[1], 
+            self.pool_size[2]), ignore_border=self.ignore_border)
+
+        #Reshuffle so the Z dimension is in the back, matrix is now (X, Y, Z)
+        #Size of the matrix is now (X/2, Y/2, Z)
+        shufl = (list(range(vid_dim-3)) + [vid_dim-2]+[vid_dim-1]+[vid_dim-3])
+        xypool_shuffle = xypool.dimshuffle(shufl)
+        
+        #Downsample again, but with a stride of 1 (so each row), meaning each (X,Y)
+        #combination along Z is downsampled.
+        yzpool = downsample.max_pool_2d(xypool_shuffle, (1, self.pool_size[0]),
+            ignore_border=self.ignore_border)
+
+        #Reshuffle so matrix is again in (Z, X, Y) shape
+        shufl = (list(range(vid_dim-3)) + [vid_dim-1]+[vid_dim-3]+[vid_dim-2])
+        return yzpool.dimshuffle(shufl)
 
 class MaxPool2DLayer(Layer):
     """

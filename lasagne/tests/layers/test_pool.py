@@ -455,6 +455,18 @@ class TestMaxPool2DNNLayer:
             raise
         #    pytest.skip()
 
+class TestMaxPool3DLayer(object):
+    def test_get_output_for_ignoreborder(self, stride=(2,2,2)):
+        from lasagne.layers.input import InputLayer
+        from lasagne.layers.pool import MaxPool3DLayer
+        original = np.array([[[3, 8, 6, 6], [1, 6, 4, 1], [7, 9, 7, 9], [5, 11, 3, 2]], [[4, 5, 8, 1], [6, 7, 4, 2], [0, 3, 5, 9], [9, 10, 10, 2]], [[10, 3, 7, 4], [2, 1, 2, 9], [8, 8, 1, 1], [6, 3, 0, 4]]])
+        desired = np.array([[[8, 8], [11, 10]], [[10, 9], [8, 4]]])
+        x = theano.shared(original)
+        input_layer = InputLayer(shape=(500, 1, 50, 50))
+        layer = MaxPool3DLayer(input_layer, (2, 2, 2))
+        result = layer.get_output_for(x).eval()
+        assert(np.allclose(desired, result))
+            
 
 class TestFeatureWTALayer(object):
     @pytest.fixture
