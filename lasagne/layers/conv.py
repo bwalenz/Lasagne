@@ -6,11 +6,12 @@ from ..utils import as_tuple
 from ..theano_extensions import conv
 
 from .base import Layer
-
+import theano
 
 __all__ = [
     "Conv1DLayer",
     "Conv2DLayer",
+    "Conv3DLayer",
 ]
 
 
@@ -462,4 +463,95 @@ class Conv2DLayer(Layer):
 
         return self.nonlinearity(activation)
 
-# TODO: add Conv3DLayer
+
+class Conv3DLayer(Layer):
+ 
+    def get_W_shape(self):
+        """Get the shape of the weight matrix `W`.
+
+        Returns
+        -------
+        tuple of int
+            The shape of the weight matrix.
+        """
+        num_input_channels = self.input_shape[1]
+        return (self.num_filters, self.filter_size[0], num_input_channels,
+                self.filter_size[1], self.filter_size[2])
+
+   
+    def __init__(self, incoming, num_filters, filter_size, stride=(1, 1, 1),
+                 border_mode="valid", 
+                 W=init.GlorotUniform(), b=init.Constant(0.),
+                 nonlinearity=nonlinearities.rectify,
+                 convolution=theano.tensor.nnet.conv3d2d.conv3d, **kwargs):
+        super(Conv3DLayer, self).__init__(incoming, **kwargs)
+        if nonlinearity is None:
+            self.nonlinearity = nonlinearities.identity
+        else:
+            self.nonlinearity = nonlinearity
+
+        self.num_filters = num_filters
+        self.filter_size = as_tuple(filter_size, 3)
+        self.stride = as_tuple(stride, 3)
+        self.border_mode = border_mode
+        self.convolution = convolution
+
+        if self.border_mode not in ['valid']:
+            raise RuntimeError("Invalid border mode: '%s'" % self.border_mode)
+
+        self.W = self.add_param(W, self.get_W_shape(), name="W")
+        b = None
+        if b is None:
+            self.b = None
+        else:
+            biases_shape = (num_filters,)
+            self.b = self.add_param(b, biases_shape, name="b",
+                                    regularizable=False)
+
+    def get_output_shape_for(self, input_shape):
+        output_time = conv_output_length(input_shape[2],
+                                         self.filter_size[0],
+                                         self.stride[0],
+                                         self.border_mode)
+
+        output_rows = conv_output_length(input_shape[3],
+                                         self.filter_size[1],
+                                         self.stride[1],
+                                         self.border_mode)
+
+        output_columns = conv_output_length(input_shape[4],
+                                            self.filter_size[2],
+                                            self.stride[2],
+                                            self.border_mode)
+
+        return (input_shape[0], self.num_filters, output_time, output_rows, output_columns)
+
+
+    def get_output_for(self, input, input_shape=None, **kwargs):
+        
+        if input_shape is None:
+            input_shape = self.input_shape
+
+        filter_shape = self.get_W_shape()
+        if self.border_mode in ['valid']:
+            #3d2d convolution expects the tensor to have the shape (btc01). 
+            #filters(w) have shape (btc01) as well.
+            #however, the layer expects shapes of bct01, so we have to reshape
+
+            #reshape this 5D tensor from (0, 1, 2, 3, 4) to (0, 2, 1, 3, 4)
+            #(bct01) -> (btc01)
+            shufl = [0, 2, 1, 3, 4]
+            input_shufl = input.dimshuffle(shufl) 
+            #also have to reshuffle the filter
+           
+            conved = self.convolution(input_shufl, self.W,
+                                      signals_shape=None, 
+                                      filters_shape=None,
+                                      border_mode=self.border_mode)
+            
+            #now reshape (btc01) back to (bct01) (0, 1, 2, 3, 4) to (0, 2, 1, 3, 4) 
+            output_shufl = conved.dimshuffle(shufl)
+
+        return self.nonlinearity(output_shufl)
+        
+

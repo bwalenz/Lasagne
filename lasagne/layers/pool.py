@@ -167,6 +167,32 @@ class MaxPool3DLayer(Layer):
         self.pad = as_tuple(pad, 3)
         self.ignore_border = ignore_border
 
+    def get_output_shape_for(self, input_shape):
+        output_shape = list(input_shape)
+        output_shape[2] = pool_output_length(input_shape[2],
+                                             pool_size=self.pool_size[0],
+                                             stride=self.stride[0],
+                                             ignore_border=self.ignore_border,
+                                             pad=self.pad[0],
+                                             )
+
+        output_shape[3] = pool_output_length(input_shape[3],
+                                             pool_size=self.pool_size[1],
+                                             stride=self.stride[1],
+                                             ignore_border=self.ignore_border,
+                                             pad=self.pad[1],
+                                             )
+
+        output_shape[4] = pool_output_length(input_shape[4],
+                                             pool_size=self.pool_size[2],
+                                             stride=self.stride[2],
+                                             ignore_border=self.ignore_border,
+                                             pad=self.pad[2],
+                                             )
+
+        return tuple(output_shape)
+
+
     def get_output_for(self, input, **kwargs):
         vid_dim = input.ndim
         #Downsample along the (X, Y) dimensions
